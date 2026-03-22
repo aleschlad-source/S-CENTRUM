@@ -127,7 +127,18 @@ def action_save():
     }
     st.session_state.collected_data.append(record)
         
-    # Záloha do lokálního souboru
+    # Odeslání do vzdálených Google Tabulek přes Webhook
+    google_success = False
+    try:
+        import requests
+        url = "https://script.google.com/macros/s/AKfycbyc9Z-ugipTXCrkSriWqHEiMwtYCPpoCrngur18KQKv174PWTYDHRTH5qb_sr7FhV1i/exec"
+        resp = requests.post(url, json=record, timeout=8)
+        if resp.text == "Success":
+            google_success = True
+    except Exception as e:
+        print(f"Chyba spojeni na Google: {e}")
+
+    # Záloha do lokálního souboru (pojistka)
     try:
         df_export = pd.DataFrame(st.session_state.collected_data)
         df_export.to_excel(LOCAL_BACKUP_PATH, index=False)
@@ -136,16 +147,24 @@ def action_save():
 
     # Vymazání pouze výrobního čísla
     st.session_state.vyrobni_cislo = ""
+    return google_success
 
 def submit_callback():
     missing, vc = pre_validation()
     if missing:
         st.session_state.form_error = "Chyba: Některá povinná pole chybí! Zkontrolujte i doplňující data úplně dole."
+        if 'form_success' in st.session_state:
+            del st.session_state['form_success']
     else:
-        action_save()
-        st.session_state.form_success = f"Úspěšně uloženo pro výrobní číslo: {vc}! (Pole vymazáno)"
-        if 'form_error' in st.session_state:
-            del st.session_state['form_error']
+        is_cloud_ok = action_save()
+        if is_cloud_ok:
+            st.session_state.form_success = f"Úspěšně odesláno do Cloudu pro výrobní číslo: {vc}!"
+            if 'form_error' in st.session_state:
+                del st.session_state['form_error']
+        else:
+            st.session_state.form_error = f"VAROVÁNÍ: Google Tabulka nebyla zastižena! Záznam byl pro jistotu uložen pouze do lokální zálohy."
+            if 'form_success' in st.session_state:
+                del st.session_state['form_success']
 
 
 # --- ČÁST 1. KASKÁDA A VÝROBNÍ ČÍSLO (NAHOŘE) ---
